@@ -2,9 +2,11 @@ from flask import Flask, render_template, send_from_directory, abort, jsonify, r
 import os
 import time
 import threading
+import webbrowser
 import json
 from datetime import datetime, timezone, timedelta
 import random
+import keyboard
 from humanize import naturalsize
 from glob import glob
 
@@ -46,6 +48,20 @@ def heartbeat():
     return "Heartbeat received", 200
 # ---
 
+# keyb combination
+def listenforkb():
+    while True:
+        time.sleep(0.1)
+        if keyboard.is_pressed('alt+`+1'):
+            while keyboard.is_pressed('alt+`+1'):
+                time.sleep(0.1)
+            webbrowser.open(f"http://localhost:{SERVER_PORT}", new=0, autoraise=True)
+
+keyb_thread = threading.Thread(target=listenforkb)
+keyb_thread.daemon = True
+keyb_thread.start()
+# ---
+
 @app.route('/')
 def index():
     if not os.path.exists(os.path.join(DATA_DIR, 'config.json')):
@@ -70,16 +86,31 @@ def index():
             primary = "N/A"
 
         folders_data.append((folder, primary))
-    
+
     try:
         img_folder = random.choice(folders)
     except IndexError:
         img_folder = ""
     
     file_size = naturalsize(sum(os.path.getsize(x) for x in glob('./data/**', recursive=True)))
-    capture_status = "currently capturing" if heartbeat_active == True else "not capturing"
+    capture_status = "currently capturing" if heartbeat_active else "not capturing"
     
-    return render_template('homepage.html', folders_data=folders_data, img_folder=img_folder, capture_amount=len(folders_data), file_size=file_size, capture_status=capture_status)
+    # pages
+    per_page = 50
+    page = request.args.get('page', 1, type=int)
+    total_pages = (len(folders_data) + per_page - 1) // per_page
+    folders_data = folders_data[(page - 1) * per_page: page * per_page]
+
+    return render_template(
+        'homepage.html',
+        folders_data=folders_data,
+        img_folder=img_folder,
+        capture_amount=len(folders),
+        file_size=file_size,
+        capture_status=capture_status,
+        page=page,
+        total_pages=total_pages
+    )
 
 @app.route('/search', methods=['GET'])
 def search():
@@ -111,9 +142,22 @@ def search():
     except IndexError:
         img_folder = ""
     
-    print(img_folder)
-    
-    return render_template('search.html', folders_data=results, img_folder=img_folder, capture_amount=len(results))
+    total_results = len(results)
+
+    # pages
+    per_page = 50
+    page = request.args.get('page', 1, type=int)
+    total_pages = (total_results + per_page - 1) // per_page
+    results = results[(page - 1) * per_page: page * per_page]
+
+    return render_template(
+        'search.html',
+        folders_data=results,
+        img_folder=img_folder,
+        capture_amount=total_results,
+        page=page,
+        total_pages=total_pages
+    )
 
 @app.route('/folder')
 def folder():
